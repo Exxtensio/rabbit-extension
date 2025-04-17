@@ -1,0 +1,43 @@
+{
+    "name": "exxtensio/rabbit-extension",
+    "version": "1.0.0",
+    "license": "MIT",
+    "type": "library",
+    "homepage": "https://github.com/exxtensio/rabbit-extension",
+    "support": {
+        "issues": "https://github.com/exxtensio/rabbit-extension/issues",
+        "source": "https://github.com/exxtensio/rabbit-extension"
+    },
+    "authors": [
+        {
+            "name": "Vladlen Beilik",
+            "email": "vladlen.beilik@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Exxtensio\\RabbitExtension\\": "src/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.x-dev"
+        },
+        "laravel": {
+            "providers": [
+                "Exxtensio\\RabbitExtension\\AppServiceProvider"
+            ]
+        }
+    },
+    "require": {
+        "php": "^8.4",
+        "laravel/framework": "^12.0",
+        "php-amqplib/php-amqplib": "v3.7.3"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

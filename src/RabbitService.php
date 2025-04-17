@@ -48,6 +48,35 @@ class RabbitService
         $this->channel->basic_publish($msg, '', $queue);
     }
 
+    public function publishResponse(string $queue, array $array): void
+    {
+        if (!$this->ensureConnection()) return;
+
+        $correlationId = uniqid();
+        $callbackQueue = $this->channel->queue_declare('', false, false, true, false)[0];
+
+        $msg = new \PhpAmqpLib\Message\AMQPMessage(json_encode([
+            'correlation_id' => $correlationId,
+            'reply_to' => $callbackQueue,
+            ...$array
+        ]));
+        $this->channel->basic_publish($msg, '', $queue);
+
+        $response = null;
+
+        $this->channel->basic_consume($callbackQueue, '', false, true, false, false, function ($reply) use ($response, $correlationId) {
+            if($reply->get('correlation_id') === $correlationId) {
+                $response = $reply->body;
+            }
+        });
+
+        while (!$response) {
+            $this->channel->wait();
+        }
+
+        dd($response);
+    }
+
     public function consume(string $queue, callable $callback): void
     {
         if (!$this->ensureConnection()) return;

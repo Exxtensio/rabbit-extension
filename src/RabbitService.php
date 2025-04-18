@@ -3,6 +3,8 @@
 namespace Exxtensio\RabbitExtension;
 
 use Exception;
+use Illuminate\Support\Facades\Log;
+use Psr\Log\LoggerInterface;
 use Throwable;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
@@ -13,6 +15,7 @@ class RabbitService
 {
     protected ?AMQPStreamConnection $connection = null;
     protected ?AMQPChannel $channel = null;
+    protected LoggerInterface $log;
     protected $callbackQueue;
     protected $response;
     protected string $correlationId;
@@ -27,6 +30,7 @@ class RabbitService
             config('rabbit-extension.password')
         );
         $this->channel = $this->connection->channel();
+        $this->log = Log::channel('rabbit');
     }
 
     public function declareQueue(string $queue): void
@@ -58,12 +62,12 @@ class RabbitService
             false,
             false,
             function ($msg) {
-                if ($msg->get('correlation_id') === $this->correlationId)
+                if ($msg->has('correlation_id') && $msg->get('correlation_id') === $this->correlationId)
                     $this->response = $msg->body;
             }
         );
 
-        $msg = new AMQPMessage($payload, [
+        $msg = new AMQPMessage(json_encode($payload), [
             'correlation_id' => $this->correlationId,
             'reply_to' => $this->callbackQueue
         ]);
@@ -72,8 +76,8 @@ class RabbitService
 
         $start = time();
         while (!$this->response) {
-            $this->channel->wait(null, false, 5);
-            if (time() - $start > 10) break;
+            $this->channel->wait(null, false, 1);
+            if (time() - $start > 2) break;
         }
 
         return $this->response;
@@ -89,21 +93,19 @@ class RabbitService
                 $payload = json_decode($msg->getBody(), true);
                 $result = call_user_func($handler, $payload);
 
-                $replyTo = $msg->get('reply_to');
-                $correlationId = $msg->get('correlation_id');
-
-                if ($replyTo && $correlationId) {
+                if ($msg->has('reply_to') && $msg->has('correlation_id')) {
                     $response = new AMQPMessage(
                         is_string($result) ? $result : json_encode($result),
-                        ['correlation_id' => $correlationId]
+                        ['correlation_id' => $msg->get('correlation_id')]
                     );
 
-                    $this->channel->basic_publish($response, '', $replyTo);
+                    $this->channel->basic_publish($response, '', $msg->get('reply_to'));
                 }
 
                 $this->channel->basic_ack($msg->getDeliveryTag());
 
             } catch (Throwable $e) {
+                $this->log->error($e);
                 $this->channel->basic_nack($msg->getDeliveryTag());
             }
         });

@@ -23,11 +23,28 @@ class RabbitService
     public function connect(): void
     {
         if ($this->connection && $this->channel) return;
+
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ]
+        ]);
+
         $this->connection = new AMQPStreamConnection(
             config('rabbit-extension.host'),
             config('rabbit-extension.port'),
             config('rabbit-extension.user'),
-            config('rabbit-extension.password')
+            config('rabbit-extension.password'),
+            config('rabbit-extension.vhost'),
+            false,
+            'AMQPLAIN',
+            null,
+            'en_US',
+            1.0,
+            1.0,
+            $context,
         );
         $this->channel = $this->connection->channel();
         $this->log = Log::channel('rabbit');

@@ -69,7 +69,8 @@ class RabbitService
         $this->correlationId = Uuid::uuid4()->toString();
 
         $this->channel->basic_consume($this->callbackQueue, '', false, true, false, false, function ($msg) {
-            if ($msg->has('correlation_id') && $msg->get('correlation_id') === $this->correlationId) $this->response = $msg->body;
+            if ($msg->has('correlation_id') && $msg->get('correlation_id') === $this->correlationId)
+                $this->response = $msg->body;
         });
 
         $msg = new AMQPMessage(json_encode($payload), [

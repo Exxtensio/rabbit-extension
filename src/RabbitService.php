@@ -137,15 +137,12 @@ class RabbitService
                 break;
             }
 
-            if((time() - $lastHeartbeat) >= 60) {
-                $this->log->error("Still alive, consuming queue: $queue");
+            if((time() - $lastHeartbeat) >= 60)
                 $lastHeartbeat = time();
-            }
 
             try {
                 $this->channel->wait(null, false, 10);
             } catch (Exception $e) {
-//                $this->log->error("Unexpected exception in wait(): {$e->getMessage()}");
                 break;
             }
 

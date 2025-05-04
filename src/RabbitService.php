@@ -97,57 +97,72 @@ class RabbitService
         $this->declareQueue($queue);
         $this->channel->basic_qos(0, 1, false);
 
-        $this->channel->basic_consume(
-            $queue,
-            '',
-            false,
-            false,
-            false,
-            false,
-            function (AMQPMessage $msg) use ($handler) {
-                try {
-                    $payload = json_decode($msg->getBody(), true);
-                    $result = call_user_func($handler, $payload);
+        $this->channel->basic_consume($queue, '', false, false, false, false, function (AMQPMessage $msg) use ($handler) {
+            try {
+                $payload = json_decode($msg->getBody(), true);
+                $result = call_user_func($handler, $payload);
 
-                    if ($msg->has('reply_to') && $msg->has('correlation_id')) {
-                        $response = new AMQPMessage(
-                            is_string($result) ? $result : json_encode($result),
-                            ['correlation_id' => $msg->get('correlation_id')]
-                        );
+                if ($msg->has('reply_to') && $msg->has('correlation_id')) {
+                    $response = new AMQPMessage(
+                        is_string($result) ? $result : json_encode($result),
+                        ['correlation_id' => $msg->get('correlation_id')]
+                    );
 
-                        $this->channel->basic_publish($response, '', $msg->get('reply_to'));
-                    }
-
-                    $this->channel->basic_ack($msg->getDeliveryTag());
-
-                } catch (Throwable $e) {
-                    $this->log->error($e);
-                    $this->channel->basic_nack($msg->getDeliveryTag(), false, true);
+                    $this->channel->basic_publish($response, '', $msg->get('reply_to'));
                 }
+
+                $this->channel->basic_ack($msg->getDeliveryTag());
+
+            } catch (Throwable $e) {
+                $this->log->error($e);
+                $this->channel->basic_nack($msg->getDeliveryTag(), false, true);
             }
-        );
+        });
 
         $startedAt = time();
         $lifetime = 300;
         $lastHeartbeat = time();
 
         while ($this->channel->is_consuming()) {
-            if((time() - $startedAt) >= $lifetime) {
+            if ((time() - $startedAt) >= $lifetime) {
                 $this->log->error('Max lifetime reached, exiting gracefully...');
                 break;
             }
 
-            if((time() - $lastHeartbeat) >= 60)
+            if ((time() - $lastHeartbeat) >= 60)
                 $lastHeartbeat = time();
 
             try {
                 $this->channel->wait(null, false, 10);
-            } catch (Exception $e) {
+            } catch (Exception) {
                 break;
             }
 
             $this->close();
         }
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function consumeInfinity(string $queue, callable $handler): void
+    {
+        $this->declareQueue($queue);
+        $this->channel->basic_qos(0, 1, false);
+
+        $this->channel->basic_consume($queue, '', false, false, false, false, function (AMQPMessage $msg) use ($handler) {
+            try {
+                $payload = json_decode($msg->getBody(), true);
+                call_user_func($handler, $payload);
+                $this->channel->basic_ack($msg->getDeliveryTag());
+            } catch (Throwable $e) {
+                $this->log->error($e);
+                $this->channel->basic_nack($msg->getDeliveryTag(), false, true);
+            }
+        });
+
+        $this->channel->wait(null, false, 10);
+        $this->close();
     }
 
     /**

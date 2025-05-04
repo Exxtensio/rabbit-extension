@@ -145,7 +145,7 @@ class RabbitService
             try {
                 $this->channel->wait(null, false, 10);
             } catch (Exception $e) {
-                $this->log->error("Unexpected exception in wait(): {$e->getMessage()}");
+//                $this->log->error("Unexpected exception in wait(): {$e->getMessage()}");
                 break;
             }
 

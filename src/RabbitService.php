@@ -118,8 +118,9 @@ class RabbitService
             }
         });
 
-        $this->channel->wait(null, false, 10);
-        $this->close();
+        while ($this->channel->is_consuming()) {
+            $this->channel->wait(null, false, 10);
+        }
     }
 
     /**

@@ -63,7 +63,7 @@ class RabbitService
         return [$connection, $channel];
     }
 
-    protected function publish(string $queue, array $payload): void
+    public function publish(string $queue, array $payload): void
     {
         [$connection, $channel] = $this->connect();
         $channel->queue_declare($queue, false, true, false, false);
@@ -72,7 +72,7 @@ class RabbitService
         $channel->basic_publish($msg, '', $queue);
     }
 
-    protected function call(string $queue, array $payload): ?string
+    public function call(string $queue, array $payload): ?string
     {
         [$connection, $channel] = $this->connect();
         list($callbackQueue, ,) = $channel->queue_declare('', false, false, true);

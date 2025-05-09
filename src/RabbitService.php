@@ -2,28 +2,41 @@
 
 namespace Exxtensio\RabbitExtension;
 
-use Exception;
-use Illuminate\Support\Facades\Log;
-use Psr\Log\LoggerInterface;
-use Throwable;
-use PhpAmqpLib\Channel\AMQPChannel;
+use Illuminate\Support\Collection;
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
 use Ramsey\Uuid\Uuid;
+use Random\RandomException;
 
 class RabbitService
 {
-    protected ?AMQPStreamConnection $connection = null;
-    protected ?AMQPChannel $channel = null;
-    protected LoggerInterface $log;
-    protected $callbackQueue;
-    protected $response;
-    protected string $correlationId;
+    private const array DEFAULT = [
+        'event' => ['type' => null, 'data' => null],
+        'session' => ['id' => null, 'uniqueId' => null],
+        'location' => ['hash' => null, 'host' => null, 'hostname' => null, 'href' => null, 'origin' => null, 'pathname' => null, 'port' => null, 'protocol' => null, 'search' => null, 'referrer' => null],
+        'network' => ['ipAddress' => null],
+        'geo' => ['latitude' => null, 'longitude' => null, 'accuracy' => null],
+        'os' => ['name' => null, 'version' => null],
+        'device' => ['type' => null],
+        'screen' => [
+            'width' => null, 'height' => null,
+            'availableWidth' => null, 'availableHeight' => null,
+            'innerWidth' => null, 'innerHeight' => null,
+            'outerWidth' => null, 'outerHeight' => null,
+            'colorDepth' => null,
+            'orientationAngle' => null, 'orientationType' => null,
+            'pixelDepth' => null, 'dpi' => null, 'isTouch' => null,
+        ],
+        'browser' => ['userAgent' => null, 'name' => null, 'version' => null, 'cookieEnabled' => null, 'language' => null, 'languages' => []],
+        'connection' => ['downlink' => null, 'effectiveType' => null, 'rtt' => null, 'saveData' => null],
+        'datetime' => ['locale' => null, 'calendar' => null, 'day' => null, 'month' => null, 'year' => null, 'numberingSystem' => null, 'timezone' => null],
+        'payload' => [],
+        'options' => ['parsePhone' => null],
+    ];
 
-    public function connect(): void
+    private function connect(): array
     {
-        if ($this->connection && $this->channel) return;
-        $this->connection = new AMQPStreamConnection(
+        $connection = new AMQPStreamConnection(
             config('rabbit-extension.host'),
             config('rabbit-extension.port'),
             config('rabbit-extension.user'),
@@ -33,8 +46,8 @@ class RabbitService
             'AMQPLAIN',
             null,
             'en_US',
-            1.0,
-            1.0,
+            5.0,
+            5.0,
             stream_context_create([
                 'ssl' => [
                     'verify_peer' => false,
@@ -42,99 +55,74 @@ class RabbitService
                     'allow_self_signed' => true
                 ]
             ]),
+            true,
+            3,
+            5.0
         );
-        $this->channel = $this->connection->channel();
-        $this->log = Log::channel('rabbit');
-    }
-
-    public function declareQueue(string $queue): void
-    {
-        $this->connect();
-        $this->channel->queue_declare($queue, false, true, false, false);
+        $channel = $connection->channel();
+        return [$connection, $channel];
     }
 
     public function publish(string $queue, array $payload): void
     {
-        $this->declareQueue($queue);
+        [$connection, $channel] = $this->connect();
+        $channel->queue_declare($queue, false, true, false, false);
+
         $msg = new AMQPMessage(json_encode($payload), ['delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT]);
-        $this->channel->basic_publish($msg, '', $queue);
+        $channel->basic_publish($msg, '', $queue);
     }
 
     public function call(string $queue, array $payload): ?string
     {
-        $this->declareQueue($queue);
-        list($this->callbackQueue, ,) = $this->channel->queue_declare('', false, false, true);
+        [$connection, $channel] = $this->connect();
+        list($callbackQueue, ,) = $channel->queue_declare('', false, false, true);
 
-        $this->response = null;
-        $this->correlationId = Uuid::uuid4()->toString();
+        $response = null;
+        $correlationId = Uuid::uuid4()->toString();
 
-        $this->channel->basic_consume($this->callbackQueue, '', false, true, false, false, function ($msg) {
-            if ($msg->has('correlation_id') && $msg->get('correlation_id') === $this->correlationId)
-                $this->response = $msg->body;
+        $channel->basic_consume($callbackQueue, '', false, true, false, false, function ($msg) use (&$response, $correlationId) {
+            if ($msg->has('correlation_id') && $msg->get('correlation_id') === $correlationId)
+                $response = $msg->body;
         });
 
         $msg = new AMQPMessage(json_encode($payload), [
-            'correlation_id' => $this->correlationId,
-            'reply_to' => $this->callbackQueue
+            'correlation_id' => $correlationId,
+            'reply_to' => $callbackQueue
         ]);
 
-        $this->channel->basic_publish($msg, '', $queue);
+        $channel->basic_publish($msg, '', $queue);
 
         $start = microtime(true);
-        while (!$this->response) {
-            $this->channel->wait(null, false, 1);
-            if (microtime(true) - $start > 3) break;
+        while (!$response && microtime(true) - $start < 3) {
+            $channel->wait(null, false, 1);
         }
 
-        return $this->response;
+        $channel->close();
+        $connection->close();
+
+        return $response;
     }
 
     /**
-     * @throws Exception
+     * @throws RandomException
      */
-    public function consume(string $queue, callable $handler): void
+    private function setCollection(Collection $collection, $ip): Collection
     {
-        $this->declareQueue($queue);
-        $this->channel->basic_qos(0, 1, false);
+        $hex = bin2hex(random_bytes(16));
+        $merged = array_replace_recursive(self::DEFAULT, $collection->toArray());
+        if (empty($merged['network']['ipAddress'])) $merged['network']['ipAddress'] = $ip;
+        if (empty($merged['session']['id'])) $merged['session']['id'] = $hex;
+        if (empty($merged['session']['uniqueId'])) $merged['session']['uniqueId'] = $hex;
 
-        $this->channel->basic_consume($queue, '', false, false, false, false, function (AMQPMessage $msg) use ($handler) {
-            try {
-                $payload = json_decode($msg->getBody(), true);
-                $result = call_user_func($handler, $payload);
-
-                if ($msg->has('reply_to') && $msg->has('correlation_id')) {
-                    $response = new AMQPMessage(
-                        is_string($result) ? $result : json_encode($result),
-                        ['correlation_id' => $msg->get('correlation_id')]
-                    );
-
-                    $this->channel->basic_publish($response, '', $msg->get('reply_to'));
-                }
-
-                $this->channel->basic_ack($msg->getDeliveryTag());
-            } catch (Throwable $e) {
-                $this->log->error($e);
-                $this->channel->basic_nack($msg->getDeliveryTag(), false, true);
-            }
-        });
-
-        $this->channel->wait(null, false, 10);
+        return collect($merged);
     }
 
-    /**
-     * @throws Exception
-     */
-    public function close(): void
+    private function decrypt($data): false|string
     {
-        $this->channel?->close();
-        $this->connection?->close();
-    }
-
-    /**
-     * @throws Exception
-     */
-    public function __destruct()
-    {
-        $this->close();
+        list($iv, $encryptedData) = explode(':', $data);
+        $iv = base64_decode($iv);
+        $ciphertext = base64_decode($encryptedData);
+        $key = substr('PPNrnrOVqSYtfaeVMTwkR2RmjfjUoOEn', 0, 32);
+        return openssl_decrypt($ciphertext, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
     }
 }

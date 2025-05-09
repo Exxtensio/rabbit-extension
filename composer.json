@@ -1,6 +1,6 @@
 {
     "name": "exxtensio/rabbit-extension",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "license": "MIT",
     "type": "library",
     "homepage": "https://github.com/exxtensio/rabbit-extension",
@@ -33,7 +33,8 @@
     "require": {
         "php": "^8.4",
         "laravel/framework": "^12.0",
-        "php-amqplib/php-amqplib": "v3.7.3"
+        "php-amqplib/php-amqplib": "v3.7.3",
+        "ext-openssl": "*"
     },
     "config": {
         "sort-packages": true

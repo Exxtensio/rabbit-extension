@@ -10,10 +10,6 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once __DIR__ . '/../helpers.php';
-        $this->app->singleton(
-            RabbitService::class,
-            fn() => new RabbitService()
-        );
     }
 
     public function boot(Filesystem $filesystem): void

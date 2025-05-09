@@ -34,7 +34,7 @@ class RabbitService
         'options' => ['parsePhone' => null],
     ];
 
-    private function connect(): array
+    protected function connect(): array
     {
         $connection = new AMQPStreamConnection(
             config('rabbit-extension.host'),
@@ -63,7 +63,7 @@ class RabbitService
         return [$connection, $channel];
     }
 
-    public function publish(string $queue, array $payload): void
+    protected function publish(string $queue, array $payload): void
     {
         [$connection, $channel] = $this->connect();
         $channel->queue_declare($queue, false, true, false, false);
@@ -72,7 +72,7 @@ class RabbitService
         $channel->basic_publish($msg, '', $queue);
     }
 
-    public function call(string $queue, array $payload): ?string
+    protected function call(string $queue, array $payload): ?string
     {
         [$connection, $channel] = $this->connect();
         list($callbackQueue, ,) = $channel->queue_declare('', false, false, true);
@@ -106,7 +106,7 @@ class RabbitService
     /**
      * @throws RandomException
      */
-    private function setCollection(Collection $collection, $ip): Collection
+    protected function setCollection(Collection $collection, $ip): Collection
     {
         $hex = bin2hex(random_bytes(16));
         $merged = array_replace_recursive(self::DEFAULT, $collection->toArray());
@@ -117,7 +117,7 @@ class RabbitService
         return collect($merged);
     }
 
-    private function decrypt($data): false|string
+    protected function decrypt($data): false|string
     {
         list($iv, $encryptedData) = explode(':', $data);
         $iv = base64_decode($iv);

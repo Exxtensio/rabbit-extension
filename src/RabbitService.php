@@ -75,6 +75,8 @@ class RabbitService
     public function call(string $queue, array $payload): ?string
     {
         [$connection, $channel] = $this->connect();
+        $channel->queue_declare($queue, false, true, false, false);
+
         list($callbackQueue, ,) = $channel->queue_declare('', false, false, true);
 
         $response = null;
